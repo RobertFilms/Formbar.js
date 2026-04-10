@@ -110,6 +110,13 @@ async function getUser(userIdentifier) {
     }
 }
 
+function getUserJoinedClasses(userId) {
+    return dbGetAll(
+        "SELECT classroom.name, classroom.id FROM classroom JOIN classusers ON classroom.id = classusers.classId WHERE classusers.studentId = ?",
+        [userId]
+    );
+}
+
 /**
  * Gets the classes a user owns from their email.
  * @param email
@@ -208,6 +215,7 @@ async function getEmailFromAPIKey(api) {
 
 module.exports = {
     getUser,
+    getUserJoinedClasses,
     getUserOwnedClasses,
     getUserClass,
 };
