@@ -112,7 +112,7 @@ async function getUser(userIdentifier) {
 
 function getUserJoinedClasses(userId) {
     return dbGetAll(
-        "SELECT classroom.name, classroom.id FROM classroom JOIN classusers ON classroom.id = classusers.classId WHERE classusers.studentId = ?",
+        "SELECT classroom.name, classroom.id, classusers.permissions FROM classroom JOIN classusers ON classroom.id = classusers.classId WHERE classusers.studentId = ?",
         [userId]
     );
 }

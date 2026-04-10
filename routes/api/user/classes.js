@@ -1,6 +1,7 @@
 const { logger } = require("../../../modules/logger");
 const { dbGet } = require("../../../modules/database");
 const { getUserOwnedClasses, getUserJoinedClasses } = require("../../../modules/user/user");
+const { MANAGER_PERMISSIONS } = require("../../../modules/permissions");
 
 module.exports = {
     run(router) {
@@ -14,14 +15,14 @@ module.exports = {
                 }
 
                 // Check if the user is a manager, or is the user themselves
-                const isManager = req.session.user.permissions === 5;
+                const isManager = req.session.user.permissions === MANAGER_PERMISSIONS;
                 const isSelf = req.session.user.id == user.id;
                 if (!isManager && !isSelf) {
                     return res.status(403).json({ error: "You do not have permission to view this user's classes." });
                 }
 
                 // Get owned classes
-                const ownedClasses = await getUserOwnedClasses(user.email, req.user);
+                const ownedClasses = await getUserOwnedClasses(user.email, req.session.user);
 
                 // Get joined classes (with permissions != 0)
                 let joinedClasses = await getUserJoinedClasses(userId);
