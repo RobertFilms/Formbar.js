@@ -52,7 +52,17 @@ function hasClassPermission(classPermission) {
 
             // If classroom is active in memory, check from memory
             if (classroom) {
-                const user = classroom.students[req.session.email] || (await dbGet("SELECT * FROM users WHERE email=?", [req.session.email]));
+                let user = classroom.students[req.session.email];
+                if (!user) {
+                    user = await dbGet("SELECT * FROM users WHERE email=?", [req.session.email]);
+                    if (user) {
+                        user.classPermission =
+                            classroom.owner === user.id
+                                ? MANAGER_PERMISSIONS
+                                : await dbGet("SELECT permissions FROM classUsers WHERE studentId=? AND classId=?", [user.id, classId]);
+                    }
+                }
+
                 const isClassOwner = classroom.owner === user.id;
                 const hasManagerPermissions = user.permissions >= MANAGER_PERMISSIONS;
                 if (!user && !isClassOwner && !hasManagerPermissions) {
@@ -74,12 +84,16 @@ function hasClassPermission(classPermission) {
                 }
 
                 const user = await dbGet("SELECT * FROM users WHERE email=?", [req.session.email]);
+                const isManager = user.permissions >= MANAGER_PERMISSIONS;
+                user.classPermission = isManager
+                    ? MANAGER_PERMISSIONS
+                    : await dbGet("SELECT permissions FROM classUsers WHERE studentId=? AND classId=?", [user.id, classId]);
                 if (!user) {
                     return res.status(401).json({ error: "User not found." });
                 }
 
                 // If the user is the owner of the classroom or has manager permissions, allow them to access the endpoint
-                if (classroom.owner === user.id || user.permissions >= MANAGER_PERMISSIONS) {
+                if (classroom.owner === user.id || isManager) {
                     next();
                     return;
                 }
@@ -91,7 +105,7 @@ function hasClassPermission(classPermission) {
 
                 const requiredPermissionLevel = typeof classPermission === "string" ? classroom.permissions[classPermission] : classPermission;
 
-                if (classUser.permissions >= requiredPermissionLevel) {
+                if (classUser.classPermissions >= requiredPermissionLevel) {
                     next();
                 } else {
                     return res.status(403).json({ message: "Unauthorized" });
