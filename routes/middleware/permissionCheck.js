@@ -3,13 +3,12 @@ const {
     CLASS_SOCKET_PERMISSION_MAPPER,
     GLOBAL_SOCKET_PERMISSIONS,
     CLASS_SOCKET_PERMISSIONS,
-    CLASS_PERMISSIONS,
+    MANAGER_PERMISSIONS,
 } = require("../../modules/permissions");
 const { classInformation } = require("../../modules/class/classroom");
 const { dbGet } = require("../../modules/database");
 const { PASSIVE_SOCKETS } = require("../../modules/socketUpdates");
 const { camelCaseToNormal } = require("../../modules/util");
-const { checkUserClassPermission } = require("../../modules/class/class");
 
 // For users who do not have teacher/manager permissions, then they can only access these endpoints when it's
 // only affecting themselves.
@@ -48,26 +47,55 @@ function hasPermission(permission) {
 function hasClassPermission(classPermission) {
     return async function (req, res, next) {
         try {
-            const classId = req.params.id;
+            const classId = Number(req.params.id);
             const classroom = classInformation.classrooms[classId];
 
             // If classroom is active in memory, check from memory
             if (classroom) {
-                const user = classroom.students[req.session.email];
-                if (!user) {
+                const user = classroom.students[req.session.email] || (await dbGet("SELECT * FROM users WHERE email=?", [req.session.email]));
+                const isClassOwner = classroom.owner === user.id;
+                const hasManagerPermissions = user.permissions >= MANAGER_PERMISSIONS;
+                if (!user && !isClassOwner && !hasManagerPermissions) {
                     return res.status(401).json({ error: "User not found in this class." });
                 }
 
                 // Retrieve the permission level from the classroom's permissions
                 const requiredPermissionLevel = typeof classPermission === "string" ? classroom.permissions[classPermission] : classPermission;
 
-                if (user.classPermissions >= requiredPermissionLevel) {
+                if (user.classPermissions >= requiredPermissionLevel || isClassOwner || hasManagerPermissions) {
                     next();
                 } else {
                     res.status(403).json({ message: "Unauthorized" });
                 }
             } else {
-                res.status(403).json({ message: "This class is not currently active." });
+                const classroom = await dbGet("SELECT * FROM classroom WHERE id=?", [classId]);
+                if (!classroom) {
+                    return res.status(404).json({ error: "Class not found" });
+                }
+
+                const user = await dbGet("SELECT * FROM users WHERE email=?", [req.session.email]);
+                if (!user) {
+                    return res.status(401).json({ error: "User not found." });
+                }
+
+                // If the user is the owner of the classroom or has manager permissions, allow them to access the endpoint
+                if (classroom.owner === user.id || user.permissions >= MANAGER_PERMISSIONS) {
+                    next();
+                    return;
+                }
+
+                const classUser = await dbGet("SELECT * FROM classusers WHERE studentId=? AND classId=?", [user.id, classId]);
+                if (!classUser) {
+                    return res.status(401).json({ error: "User not found in this class." });
+                }
+
+                const requiredPermissionLevel = typeof classPermission === "string" ? classroom.permissions[classPermission] : classPermission;
+
+                if (classUser.permissions >= requiredPermissionLevel) {
+                    next();
+                } else {
+                    return res.status(403).json({ message: "Unauthorized" });
+                }
             }
         } catch (err) {
             logger.log("error", err.stack);
